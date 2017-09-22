@@ -1,0 +1,529 @@
+---
+title: "Salmonella model training"
+author: "Nicole Wheeler"
+date: "10/6/2016"
+output: html_document
+---
+
+This is the complete workflow used to generate a random forest model using output data from an hmmsearch of your protein coding genes against eggNOG gamma proteobacterial protein HMMs. Before running this notebook, run the parse_hmmsearch.pl script to get a tab-delimited file containing bitscores for all isolates.
+
+```{r, read in data}
+# library(gplots)
+library(caret)
+library(randomForest)
+set.seed(1)
+
+# set the directory you are working from
+directory <- "~/Documents/salmonella/pilot_model_building/"
+
+# Reading in the eggNOG model scores, checking to make sure that top eggNOG model hit for each protein in the orthogroup is the same
+traindata <- read.delim(paste(directory, "/bitscores.tsv", sep=""))
+traindata <- t(traindata)
+
+phenotype <- read.delim(paste(directory, "/phenotype.tsv", sep=""), header=F)
+phenotype[,1] <- make.names(phenotype[,1])
+
+traindata <- cbind.data.frame(traindata, phenotype=phenotype[match(row.names(traindata), phenotype[,1]),2])
+traindata <- na.roughfix(traindata)
+traindata <- traindata[,-nearZeroVar(traindata)]
+names(traindata) <- make.names(names(traindata))
+```
+
+The following section is an optional step for picking the best values of mtry (number of gnees sampled per node) and ntree (number of trees in your random forest) for building your model. Instead of running all of the code at once, proceed through each step or model building and examine the figures produced. These will give you an indication of the point at which the performance of your model starts to level off. 
+
+In general, greater values of ntree and mtry will give you better stability in the top genes that are identified by the model. You can alternatively skip this step and proceed immediately to the next one, where values of 10,000 trees and p/10 genes per node (where p is total number of genes in the training data) have been chosen as a good starting point. 
+
+```{r, train model}
+# this section is for picking out the best parameters for building your model
+set.seed(1)
+
+# varying ntree
+error <- vector()
+sparsity <- vector()
+for(i in c(1, 10, 50, 250, 500, 1000, 1500, 2000, 5000, 10000)) { 
+  model <- randomForest(phenotype ~ ., data=traindata, ntree=i)
+  error <- c(error, model$err.rate[length(model$err.rate)])
+  sparsity <- c(sparsity, (sum(model$importance[,1]<=0))/(ncol(traindata)-1))
+}
+
+# varying mtry
+error2 <- vector()
+sparsity2 <- vector()
+param <- ncol(traindata)-1
+for(i in c(1, round(param/10), round(param/5), round(param/3), round(param/2), param)) {
+  model <- randomForest(phenotype ~ ., data=traindata, ntree=10000, mtry=i)
+  error2 <- c(error2, model$err.rate[length(model$err.rate)])
+  sparsity2 <- c(sparsity2, (sum(model$importance[,1]<=0))/(ncol(traindata)-1))
+}
+
+model <- randomForest(phenotype ~ ., data=traindata, ntree=10000, mtry=param/10, na.action=na.roughfix)
+
+png(paste(directory, "/model_training/m1_error_vs_ntree.png", sep=""), width=350, height = 350)
+plot(x=c(1, 10, 50, 250, 500, 1000, 1500, 2000, 5000, 10000), y=error, xlab="Number of trees", ylab="OOB error rate", pch=16)
+dev.off()
+png(paste(directory, "/model_training/m1_sparsity_vs_ntree.png", sep=""), width=350, height = 350)
+plot(x=c(1, 10, 50, 250, 500, 1000, 1500, 2000, 5000, 10000), y=sparsity, xlab="Number of trees", ylab="% genes uninformative", pch=16)
+dev.off()
+png(paste(directory, "/model_training/m1_error_vs_mtry.png", sep=""), width=350, height = 350)
+plot(x=c(1, round(param/10), round(param/5), round(param/3), round(param/2), param), y=error2, xlab="Number of genes sampled per tree", ylab="OOB error rate", pch=16)
+dev.off()
+png(paste(directory, "/model_training/m1_sparsity_vs_mtry.png", sep=""), width=350, height = 350)
+plot(x=c(1, round(param/10), round(param/5), round(param/3), round(param/2), param), y=sparsity2, xlab="Number of genes sampled per tree", ylab="% genes uninformative", pch=16)
+dev.off()
+
+train2 <- traindata[,match(names(model$importance[model$importance[,1]>0,]), colnames(traindata))]
+train2 <- cbind(train2, phenotype=traindata$phenotype)
+
+error <- vector()
+sparsity <- vector()
+for(i in c(1, 10, 50, 250, 500, 1000, 1500, 2000, 5000, 10000)) {
+  model <- randomForest(phenotype ~ ., data=train2, ntree=i, na.action=na.roughfix)
+  error <- c(error, median(model$err.rate))
+  sparsity <- c(sparsity, (sum(model$importance[,1]<=0))/(ncol(train2)-1))
+}
+
+error2 <- vector()
+sparsity2 <- vector()
+param <- ncol(train2)-1
+for(i in c(1, round(param/10), round(param/5), round(param/3), round(param/2), param)) {
+  model <- randomForest(phenotype ~ ., data=train2, ntree=10000, mtry=i, na.action=na.roughfix)
+  error2 <- c(error2, median(model$err.rate))
+  sparsity2 <- c(sparsity2, (sum(model$importance[,1]<=0))/(ncol(train2)-1))
+}
+
+model <- randomForest(phenotype ~ ., data=train2, ntree=10000, mtry=param/10, na.action=na.roughfix)
+
+png(paste(directory, "/model_training/m2_error_vs_ntree.png", sep=""), width=350, height = 350)
+plot(x=c(1, 10, 50, 250, 500, 1000, 1500, 2000, 5000, 10000), y=error, xlab="Number of trees", ylab="OOB error rate", pch=16)
+dev.off()
+png(paste(directory, "/model_training/m2_sparsity_vs_ntree.png", sep=""), width=350, height = 350)
+plot(x=c(1, 10, 50, 250, 500, 1000, 1500, 2000, 5000, 10000), y=sparsity, xlab="Number of trees", ylab="% genes uninformative", pch=16)
+dev.off()
+png(paste(directory, "/model_training/m2_error_vs_mtry.png", sep=""), width=350, height = 350)
+plot(x=c(1, round(param/10), round(param/5), round(param/3), round(param/2), param), y=error2, xlab="Number of genes sampled per tree", ylab="OOB error rate", pch=16)
+dev.off()
+png(paste(directory, "/model_training/m2_sparsity_vs_mtry.png", sep=""), width=350, height = 350)
+plot(x=c(1, round(param/10), round(param/5), round(param/3), round(param/2), param), y=sparsity2, xlab="Number of genes sampled per tree", ylab="% genes uninformative", pch=16)
+dev.off()
+
+train3 <- train2[,match(names(model$importance[model$importance[,1]>quantile(model$importance[,1], 0.5),]), colnames(train2))]
+train3 <- cbind(train3, phenotype=train2$phenotype)
+
+error <- vector()
+sparsity <- vector()
+param <- ncol(train3)-1
+for(i in c(1, 10, 50, 250, 500, 1000, 1500, 2000, 5000, 10000)) {
+  model <- randomForest(phenotype ~ ., data=train3, ntree=i, na.action=na.roughfix)
+  error <- c(error, median(model$err.rate))
+  sparsity <- c(sparsity, (sum(model$importance[,1]<=0))/(ncol(train3)-1))
+}
+
+error2 <- vector()
+sparsity2 <- vector()
+for(i in c(1, round(param/10), round(param/5), round(param/3), round(param/2), param)) {
+  model <- randomForest(phenotype ~ ., data=train3, ntree=10000, mtry=i, na.action=na.roughfix)
+  error2 <- c(error2, median(model$err.rate))
+  sparsity2 <- c(sparsity2, (sum(model$importance[,1]<=0))/(ncol(train3)-1))
+}
+
+model <- randomForest(phenotype ~ ., data=train3, ntree=10000, mtry=param/10, na.action=na.roughfix)
+
+png(paste(directory, "/model_training/m3_error_vs_ntree.png", sep=""), width=350, height = 350)
+plot(x=c(1, 10, 50, 250, 500, 1000, 1500, 2000, 5000, 10000), y=error, xlab="Number of trees", ylab="OOB error rate", pch=16)
+dev.off()
+png(paste(directory, "/model_training/m3_sparsity_vs_ntree.png", sep=""), width=350, height = 350)
+plot(x=c(1, 10, 50, 250, 500, 1000, 1500, 2000, 5000, 10000), y=sparsity, xlab="Number of trees", ylab="% genes uninformative", pch=16)
+dev.off()
+png(paste(directory, "/model_training/m3_error_vs_mtry.png", sep=""), width=350, height = 350)
+plot(x=c(1, round(param/10), round(param/5), round(param/3), round(param/2), param), y=error2, xlab="Number of genes sampled per tree", ylab="OOB error rate", pch=16)
+dev.off()
+png(paste(directory, "/model_training/m3_sparsity_vs_mtry.png", sep=""), width=350, height = 350)
+plot(x=c(1, round(param/10), round(param/5), round(param/3), round(param/2), param), y=sparsity2, xlab="Number of genes sampled per tree", ylab="% genes uninformative", pch=16)
+dev.off()
+
+train4 <- train3[,match(names(model$importance[model$importance[,1]>quantile(model$importance[,1], 0.5),]), colnames(train3))]
+train4 <- cbind(train4, phenotype=train3$phenotype)
+
+error <- vector()
+sparsity <- vector()
+for(i in c(1, 10, 50, 250, 500, 1000, 1500, 2000, 5000, 10000)) {
+  model <- randomForest(phenotype ~ ., data=train4, ntree=i, na.action=na.roughfix)
+  error <- c(error, median(model$err.rate))
+  sparsity <- c(sparsity, (sum(model$importance[,1]<=0))/(ncol(train4)-1))
+}
+
+error2 <- vector()
+sparsity2 <- vector()
+param <- ncol(train4)-1
+for(i in c(1, round(param/10), round(param/5), round(param/3), round(param/2), param)) {
+  model <- randomForest(phenotype ~ ., data=train4, ntree=10000, mtry=i, na.action=na.roughfix)
+  error2 <- c(error2, median(model$err.rate))
+  sparsity2 <- c(sparsity2, (sum(model$importance[,1]<=0))/(ncol(train4)-1))
+}
+
+model <- randomForest(phenotype ~ ., data=train4, ntree=10000, mtry=param/10, na.action=na.roughfix)
+
+png(paste(directory, "/model_training/m4_error_vs_ntree.png", sep=""), width=350, height = 350)
+plot(x=c(1, 10, 50, 250, 500, 1000, 1500, 2000, 5000, 10000), y=error, xlab="Number of trees", ylab="OOB error rate", pch=16)
+dev.off()
+png(paste(directory, "/model_training/m4_sparsity_vs_ntree.png", sep=""), width=350, height = 350)
+plot(x=c(1, 10, 50, 250, 500, 1000, 1500, 2000, 5000, 10000), y=sparsity, xlab="Number of trees", ylab="% genes uninformative", pch=16)
+dev.off()
+png(paste(directory, "/model_training/m4_error_vs_mtry.png", sep=""), width=350, height = 350)
+plot(x=c(1, round(param/10), round(param/5), round(param/3), round(param/2), param), y=error2, xlab="Number of genes sampled per tree", ylab="OOB error rate", pch=16)
+dev.off()
+png(paste(directory, "/model_training/m4_sparsity_vs_mtry.png", sep=""), width=350, height = 350)
+plot(x=c(1, round(param/10), round(param/5), round(param/3), round(param/2), param), y=sparsity2, xlab="Number of genes sampled per tree", ylab="% genes uninformative", pch=16)
+dev.off()
+
+model$predicted
+
+names(model$importance[order(model$importance, decreasing=T),][1:10])
+
+save(model, train2, train3, train4, file=paste(directory, "/traindata.Rdata", sep=""))
+```
+
+This section allows you to build a model through iterative feature selection, using parameters that we feel are sensible. You can substitute in your own parameters chosen from the process above if you prefer. 
+
+```{r, quicker model building}
+set.seed(1)
+param <- ncol(traindata)-1
+model1 <- randomForest(phenotype ~ ., data=traindata, ntree=10000, mtry=param/10, na.action=na.roughfix)
+model1
+
+png(paste(directory, "/VI_full.png", sep=""), width=400, height=350)
+plot(1:param, model1$importance[order(model1$importance, decreasing=T)], xlim=c(1,1000), ylab="Variable importance", xlab="Top genes")
+dev.off()
+pdf(paste(directory, "VI_full.pdf", sep=""), width=5, height=5)
+plot(1:param, model1$importance[order(model1$importance, decreasing=T)], xlim=c(1,1000), ylab="Variable importance", xlab="Top genes")
+dev.off()
+
+train2 <- traindata[,match(names(model1$importance[model1$importance[,1]>0,]), colnames(traindata))]
+train2 <- cbind(train2, phenotype=traindata$phenotype)
+param <- ncol(train2)-1
+model2 <- randomForest(phenotype ~ ., data=train2, ntree=10000, mtry=param/10, na.action=na.roughfix)
+model2
+
+train3 <- train2[,match(names(model2$importance[model2$importance[,1]>quantile(model2$importance[,1], 0.5),]), colnames(train2))]
+train3 <- cbind(train3, phenotype=train2$phenotype)
+param <- ncol(train3)-1
+model3 <- randomForest(phenotype ~ ., data=train3, ntree=10000, mtry=param/10, na.action=na.roughfix)
+model3
+
+train4 <- train3[,match(names(model3$importance[model3$importance[,1]>quantile(model3$importance[,1], 0.5),]), colnames(train3))]
+train4 <- cbind(train4, phenotype=train3$phenotype)
+param <- ncol(train4)-1
+model4 <- randomForest(phenotype ~ ., data=train4, ntree=10000, mtry=param/10, na.action=na.roughfix)
+model4
+
+train5 <- train4[,match(names(model4$importance[model4$importance[,1]>quantile(model4$importance[,1], 0.5),]), colnames(train4))]
+train5 <- cbind(train5, phenotype=train4$phenotype)
+param <- ncol(train5)-1
+model5 <- randomForest(phenotype ~ ., data=train5, ntree=10000, mtry=param/10, na.action=na.roughfix)
+model5
+
+model5$predicted
+
+names(model5$importance[order(model5$importance[,1], decreasing=T),])[1:10]
+
+png(paste(directory, "final_model_VI.png", sep=""), width=400, height=350)
+plot(1:param, model5$importance[order(model5$importance, decreasing=T),], xlab="", ylab="Variable importance")
+dev.off()
+
+save(model1, model2, model3, model4, model5, traindata, train2, train3, train4, train5, file=paste(directory, "finalmodel.Rdata", sep=""))
+```
+
+The following section will show you how the performance of your model has improved as you iterated through cycles of feature selection. It will give you an idea of whether you have performed enough cycles, or whether you need to carry on. 
+
+You can look at both the out-of-bag votes, which are just votes cast by trees on data they weren't trained on. This gives you a good idea of how the model would score strains that are distantly related to your training data. The second plot shows you votes cast by all of the trees on all of the serovars, and gives you a better idea of how your model would scores similar strains. 
+
+```{r, looking at votes}
+votedata <- rbind.data.frame(cbind.data.frame(model=rep("1", 13), Serovar=row.names(model1$votes), Invasive=model1$votes[,2]), cbind.data.frame(model=rep("2", 13), Serovar=row.names(model1$votes), Invasive=model2$votes[,2]), cbind.data.frame(model=rep("3", 13), Serovar=row.names(model1$votes), Invasive=model3$votes[,2]), cbind.data.frame(model=rep("4", 13), Serovar=row.names(model1$votes), Invasive=model4$votes[,2]), cbind.data.frame(model=rep("5", 13), Serovar=row.names(model1$votes), Invasive=model5$votes[,2]))
+votedata$Phenotype <- phenotype[match(votedata$Serovar, phenotype[,1]),2]
+
+ggplot(votedata, aes(x=model, y=Invasive, col=Phenotype)) + geom_jitter(width=0.1) + theme_classic(8) + ylab("Proportion of votes for invasive phenotype") + xlab("Model iteration") + geom_hline(yintercept=0.5, lty=2, col="grey") + theme(legend.key.size = unit(0.3, "cm"))
+ggsave("votes.png", width=7, height=2.5)
+ggsave("votes.pdf", width=7, height=2.5)
+
+fullvotes <- rbind.data.frame(cbind.data.frame(model=rep("1", 13), Serovar=row.names(model1$votes), Invasive=predict(model1, traindata, type="vote")[,2]), cbind.data.frame(model=rep("2", 13), Serovar=row.names(model1$votes), Invasive=predict(model2, train2, type="vote")[,2]), cbind.data.frame(model=rep("3", 13), Serovar=row.names(model1$votes), Invasive=predict(model3, train3, type="vote")[,2]), cbind.data.frame(model=rep("4", 13), Serovar=row.names(model1$votes), Invasive=predict(model4, train4, type="vote")[,2]), cbind.data.frame(model=rep("5", 13), Serovar=row.names(model1$votes), Invasive=predict(model5, train5, type="vote")[,2]))
+fullvotes$Phenotype <- phenotype[match(fullvotes$Serovar, phenotype[,1]),2]
+
+ggplot(fullvotes, aes(x=model, y=Invasive, col=Phenotype)) + geom_jitter(width=0.1) + theme_classic(8) + ylab("Proportion of votes for invasive phenotype") + xlab("Model iteration") + geom_hline(yintercept=0.5, lty=2, col="grey") + theme(legend.key.size = unit(0.3, "cm"))
+ggsave("full_votes.png", width=7, height=2.5)
+ggsave("full_votes.pdf", width=7, height=2.5)
+
+```
+
+This section shows you how frequently particular genes are identified as top predictors across different iterations of model building, and how much importance they are assigned. Because model building involved a lot of stochasticity, you may find that your top predictors are quite subject to change across iterations. 
+
+```{r, assessing stability of predictors}
+set.seed(1)
+
+usefulgenes <- data.frame()
+topgenes <- data.frame()
+
+for(i in 1:10) {
+  model <- randomForest(phenotype ~ ., data=traindata, ntree=10000, mtry=param/10, na.action=na.roughfix)
+  usefulgenes <- rbind(usefulgenes, cbind(model=i, gene=names(model$importance[model$importance>0,]), model$importance[model$importance>0]))
+  topgenes <- rbind(topgenes, cbind(model=i, gene=names(model$importance[order(model$importance, decreasing=T),][1:20]), model$importance[order(model$importance, decreasing=T),][1:20]))
+}
+
+png(paste(directory, "/gene_usefulness.png", sep=""))
+hist(table(usefulgenes$gene), col="grey", main="", xlab="Number of times each gene was useful (VI >) in a model")
+dev.off()
+sum(table(usefulgenes$gene)==10)
+sum(table(usefulgenes$gene)<10)
+
+topgenes$V3 <- as.numeric(as.character(topgenes$V3))
+
+ggplot(topgenes, aes(x=model, y=gene, fill=as.numeric(V3))) + geom_tile() + ggtitle("Imporance values for top genes across model iterations") + scale_fill_continuous("Importance")
+
+table(topgenes$gene)
+png(paste(directory, "/topgenes.png", sep=""))
+hist(table(topgenes$gene), col="grey", main="", xlab="Number of times each gene appeared in the\ntop 20 predictors")
+dev.off()
+
+save(usefulgenes, topgenes, file=paste(directory, "/allgenemodels_10x.Rdata", sep=""))
+```
+
+This section allows you to look at the COG categories of your top predictor genes, compared to the COG categories in your original training set, to see if any are over-represented. 
+
+```{r, COG analysis}
+annotations <- read.delim(paste(directory, "/gproNOG.annotations.tsv", sep=""), header=F)  # matcing annotation file for your chosen model set can be downloaded from http://eggnogdb.embl.de/#/app/downloads
+nogs <- read.delim(paste(directory, "/models_used.tsv", sep=""), header=F)
+nogs[,2] <- sub(".*NOG\\.", "", nogs[,2])
+nogs[,2] <- sub(".meta_raw", "", nogs[,2])
+info <- annotations[match(nogs[,2], annotations[,2]),]
+info$V5 <- as.character(info$V5)
+
+# proportion of each COG catergory that comes up in the top indicators
+background <- nogs[match(colnames(traindata), make.names(nogs[,1])),2]
+background_COGs <- annotations[match(background, annotations[,2]),5]
+background_COGs2 <- vector()
+for(i in background_COGs) {
+    if(!is.na(i)) {
+       if(nchar(i)>1) {
+        for(n in 1:nchar(i)) {
+          background_COGs2 <- c(background_COGs2, substr(i,n,n))
+        }
+      } else {
+    background_COGs2 <- rbind(background_COGs2, i)
+  }
+  }
+}
+
+
+
+predictor_COGs <- data.frame()
+for(i in 1:nrow(info)) {
+  if(!is.na(info$V5[i])) {
+       if(nchar(info$V5[i])>1) {
+    for(n in 1:nchar(info$V5[i])) {
+      line <- info[i,]
+      line$V5 <- substr(info$V5[i],n,n)
+      predictor_COGs <- rbind(predictor_COGs, line)
+    }
+  } else {
+    predictor_COGs <- rbind(predictor_COGs, info[i,])
+  }
+
+  }
+ }
+table(info[,5])/table(annotations[,5])[match(names(table(info[,5])), names(table(annotations[,5])))]
+
+```
+
+This section allows you to compare the performance of your model predicting true phenotype and a random phenotype. 
+
+```{r, control}
+set.seed(1)
+
+control <- traindata
+control$phenotype <- sample(traindata$phenotype)
+
+error <- vector()
+sparsity <- vector()
+for(i in c(1, 10, 50, 250, 500, 1000, 1500, 2000, 5000, 10000)) {
+  model <- randomForest(phenotype ~ ., data=control, ntree=i, na.action=na.roughfix)
+  error <- c(error, median(model$err.rate))
+  sparsity <- c(sparsity, (sum(model$importance[,1]<=0))/4415)
+}
+
+png(paste(directory, "/control_error_vs_ntree.png", sep=""), width=350, height = 350)
+plot(x=c(1, 10, 50, 250, 500, 1000, 1500, 2000, 5000, 10000), y=error, xlab="Number of trees", ylab="Median OOB error rate", pch=16)
+dev.off()
+
+error2 <- vector()
+sparsity2 <- vector()
+param <- ncol(control)-1
+for(i in c(1, param/10, param/5, param/2, param)) {
+  model <- randomForest(phenotype ~ ., data=control, ntree=1000, mtry=i, na.action=na.roughfix)
+  error2 <- c(error2, median(model$err.rate))
+  sparsity2 <- c(sparsity2, (sum(model$importance[,1]<=0))/3742)
+}
+
+png(paste(directory, "/control_sparsity_vs_mtry.png", sep=""), width=350, height = 350)
+plot(x=c(1, param/10, param/5, param/2, param), y=sparsity2, xlab="Number of genes sampled per tree", ylab="% genes uninformative", pch=16)
+dev.off()
+
+ctrain2 <- control[,match(names(model$importance[model$importance[,1]>0,]), colnames(control))]
+ctrain2 <- cbind(ctrain2, phenotype=control$phenotype)
+
+error <- vector()
+sparsity <- vector()
+for(i in c(1, 10, 50, 250, 500, 1000, 1500, 2000, 5000, 10000)) {
+  model <- randomForest(phenotype ~ ., data=ctrain2, ntree=i, na.action=na.roughfix)
+  error <- c(error, median(model$err.rate))
+  sparsity <- c(sparsity, (sum(model$importance[,1]<=0))/(ncol(ctrain2)-1))
+}
+
+error2 <- vector()
+sparsity2 <- vector()
+param <- ncol(ctrain2)-1
+for(i in c(1, param/10, param/5, param/2, param)) {
+  model <- randomForest(phenotype ~ ., data=ctrain2, ntree=20000, mtry=i, na.action=na.roughfix)
+  error2 <- c(error2, median(model$err.rate))
+  sparsity2 <- c(sparsity2, (sum(model$importance[,1]<=0))/(ncol(ctrain2)-1))
+}
+
+ctrain3 <- ctrain2[,match(names(model$importance[model$importance[,1]>quantile(model$importance[,1], 0.5),]), colnames(ctrain2))]
+ctrain3 <- cbind(ctrain3, phenotype=ctrain2$phenotype)
+
+error <- vector()
+sparsity <- vector()
+for(i in c(1, 10, 50, 250, 500, 1000, 1500, 2000, 5000, 10000)) {
+  model <- randomForest(phenotype ~ ., data=ctrain3, ntree=i, na.action=na.roughfix)
+  error <- c(error, median(model$err.rate))
+  sparsity <- c(sparsity, (sum(model$importance[,1]<=0))/(ncol(ctrain2)-1))
+}
+
+error2 <- vector()
+sparsity2 <- vector()
+param <- ncol(ctrain3)-1
+for(i in c(1, param/10, param/5, param/2, param)) {
+  model <- randomForest(phenotype ~ ., data=ctrain3, ntree=2000, mtry=i, na.action=na.roughfix)
+  error2 <- c(error2, median(model$err.rate))
+  sparsity2 <- c(sparsity2, (sum(model$importance[,1]<=0))/(ncol(ctrain3)-1))
+}
+
+ctrain4 <- ctrain3[,match(names(model$importance[model$importance[,1]>quantile(model$importance[,1], 0.5),]), colnames(ctrain3))]
+ctrain4 <- cbind(ctrain4, phenotype=ctrain3$phenotype)
+
+error <- vector()
+sparsity <- vector()
+for(i in c(1, 10, 50, 250, 500, 1000, 1500, 2000, 5000, 10000)) {
+  model <- randomForest(phenotype ~ ., data=ctrain4, ntree=i, na.action=na.roughfix)
+  error <- c(error, median(model$err.rate))
+  sparsity <- c(sparsity, (sum(model$importance[,1]<=0))/(ncol(ctrain4)-1))
+}
+
+error2 <- vector()
+sparsity2 <- vector()
+param <- ncol(ctrain4)-1
+for(i in c(1, param/10, param/5, param/2, param)) {
+  model <- randomForest(phenotype ~ ., data=ctrain4, ntree=5000, mtry=i, na.action=na.roughfix)
+  error2 <- c(error2, median(model$err.rate))
+  sparsity2 <- c(sparsity2, (sum(model$importance[,1]<=0))/(ncol(ctrain4)-1))
+}
+
+png(paste(directory, "/control4_error_vs_ntree.png", sep=""), width=350, height = 350)
+plot(x=c(1, 10, 50, 250, 500, 1000, 1500, 2000, 5000, 10000), y=error, xlab="Number of trees", ylab="OOB error rate", pch=16)
+dev.off()
+png(paste(directory, "/control4_sparsity_vs_ntree.png", sep=""), width=350, height = 350)
+plot(x=c(1, 10, 50, 250, 500, 1000, 1500, 2000, 5000, 10000), y=sparsity, xlab="Number of trees", ylab="% genes uninformative", pch=16)
+dev.off()
+png(paste(directory, "/control4_error_vs_mtry.png", sep=""), width=350, height = 350)
+plot(x=c(1, round(param/10), round(param/5), round(param/2), param), y=error2, xlab="Number of genes sampled per tree", ylab="OOB error rate", pch=16)
+dev.off()
+png(paste(directory, "/control4_sparsity_vs_mtry.png", sep=""), width=350, height = 350)
+plot(x=c(1, round(param/10), round(param/5), round(param/2), param), y=sparsity2, xlab="Number of genes sampled per tree", ylab="% genes uninformative", pch=16)
+dev.off()
+
+
+cmodel <- randomForest(phenotype ~ ., data=ctrain4, ntree=10000, mtry=10, na.action=na.roughfix)
+
+save(cmodel, ctrain2, ctrain3, ctrain4, file="control_traindata.Rdata")
+
+# out-of-bag votes on phenotype for your control model
+hist(cmodel$votes[,2])
+# out-of-bag votes on phenotype for your real model
+hist(model5$votes[,2])
+
+# compare votes and phenotypes for the control and real datasets
+cbind(cmodel$votes, control$phenotype, model5$votes, train5$phenotype)
+```
+
+This approach repeats the full model-building process 5 times to see how similar the top predictor genes are. 
+
+```{r, testing the robustness of the top result}
+topgenes <- vector()
+
+# picking out the top predictors from the model
+for(i in 1:5) {
+  set.seed(i)
+
+error <- vector()
+sparsity <- vector()
+for(i in c(1, 10, 50, 250, 500, 1000, 1500, 2000, 5000, 10000)) {
+  model <- randomForest(phenotype ~ ., data=traindata, ntree=i, na.action=na.roughfix)
+  error <- c(error, median(model$err.rate))
+  sparsity <- c(sparsity, (sum(model$importance[,1]<=0))/(ncol(traindata)-1))
+}
+
+error2 <- vector()
+sparsity2 <- vector()
+param <- ncol(control)-1
+for(i in c(1, param/10, param/5, param/3, param/2, param)) {
+  model <- randomForest(phenotype ~ ., data=traindata, ntree=1000, mtry=i, na.action=na.roughfix)
+  error2 <- c(error2, median(model$err.rate))
+  sparsity2 <- c(sparsity2, (sum(model$importance[,1]<=0))/(ncol(traindata)-1))
+}
+
+train2 <- traindata[,match(names(model$importance[model$importance[,1]>0,]), colnames(traindata))]
+train2 <- cbind(train2, phenotype=traindata$phenotype)
+
+error <- vector()
+sparsity <- vector()
+for(i in c(1, 10, 50, 250, 500, 1000, 1500, 2000, 5000, 10000)) {
+  model <- randomForest(phenotype ~ ., data=train2, ntree=i, na.action=na.roughfix)
+  error <- c(error, median(model$err.rate))
+  sparsity <- c(sparsity, (sum(model$importance[,1]<=0))/(ncol(train2)-1))
+}
+
+error2 <- vector()
+sparsity2 <- vector()
+param <- ncol(control)-1
+for(i in c(1, param/10, param/5, param/3, param/2, param)) {
+  model <- randomForest(phenotype ~ ., data=train2, ntree=20000, mtry=i, na.action=na.roughfix)
+  error2 <- c(error2, median(model$err.rate))
+  sparsity2 <- c(sparsity2, (sum(model$importance[,1]<=0))/(ncol(train2)-1))
+}
+
+train3 <- train2[,match(names(model$importance[model$importance[,1]>quantile(model$importance[,1], 0.5),]), colnames(train2))]
+train3 <- cbind(train3, phenotype=train2$phenotype)
+
+error <- vector()
+sparsity <- vector()
+for(i in c(1, 10, 50, 250, 500, 1000, 1500, 2000, 5000, 10000)) {
+  model <- randomForest(phenotype ~ ., data=train3, ntree=i, na.action=na.roughfix)
+  error <- c(error, median(model$err.rate))
+  sparsity <- c(sparsity, (sum(model$importance[,1]<=0))/(ncol(train3)-1))
+}
+
+error2 <- vector()
+sparsity2 <- vector()
+param <- ncol(control)-1
+for(i in c(1, param/10, param/5, param/3, param/2, param)) {
+  model <- randomForest(phenotype ~ ., data=train3, ntree=2000, mtry=i, na.action=na.roughfix)
+  error2 <- c(error2, median(model$err.rate))
+  sparsity2 <- c(sparsity2, (sum(model$importance[,1]<=0))/(ncol(train3)-1))
+}
+
+train4 <- train3[,match(names(model$importance[model$importance[,1]>quantile(model$importance[,1], 0.5),]), colnames(train3))]
+train4 <- cbind(train4, phenotype=train3$phenotype)
+
+topgenes <- c(topgenes, colnames(train4))
+}
+
+```
+
