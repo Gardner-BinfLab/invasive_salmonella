@@ -1,0 +1,75 @@
+---
+title: "Salmonella model training"
+author: "Nicole Wheeler"
+date: "10/6/2016"
+output: html_document
+---
+
+General introduction....
+
+```{r}
+library(caret)
+library(randomForest)
+library(ggplot2)
+library(ggrepel)
+
+# set the directory you are working from
+directory <- ""
+
+load(paste(directory, "/finalmodel.Rdata", sep=""))
+lookup <- read.delim(paste(directory, "/lookup.tsv", sep=""))
+
+# Reading in the eggNOG model scores, checking to make sure that top eggNOG model hit for each protein in the orthogroup is the same
+files <- list.files(paste(directory, "/search/", sep=""), pattern=".parse")
+
+bitscores <- data.frame()
+
+for(file in files) {
+  strain <- sub(".search.parse", "", file)
+  read <- read.delim(paste(directory, "/search/", file, sep=""), stringsAsFactors=F, comment.char="@", header=F)
+  bitscores <- rbind(bitscores, cbind.data.frame(strain=rep(strain, nrow(read)), read))
+}
+
+# go through each row of the ortholog list and collect bitscores for each gene - FIX THIS - need to be comparing the right gene to the right model
+orthlist <- read.delim(paste(directory, "/orthlist.tsv", sep=""), header=T, stringsAsFactors=F)
+
+testdata <- data.frame()
+
+for(i in unique(bitscores$strain)) {  # for each sample
+  scores <- vector()
+  for (j in lookup$Gene) { # for each key indicator gene
+    if (!i %in% bitscores$strain[bitscores$V1 %in% orthlist[orthlist[,1]==j,]]) {
+        scores <- c(scores, NA)
+    }
+    else if(bitscores$V7[bitscores$V1 %in% orthlist[orthlist[,1]==j,]&bitscores$strain==i&bitscores$V4==lookup$Model[lookup$Gene==j]][1]<0.0001) { # if the E-value looks reasonable
+    scores <- c(scores, bitscores$V8[bitscores$V1 %in% orthlist[orthlist[,1]==j,]&bitscores$strain==i&bitscores$V4==lookup$Model[lookup$Gene==j]][1])
+  } else {
+    scores <- c(scores, NA)
+  }
+  }
+  testdata <- rbind(testdata, scores)
+}
+
+names(testdata) <- colnames(train5)[-197]
+row.names(testdata) <- unique(bitscores$strain)
+
+for(i in 1:ncol(testdata)) {
+  if(sum(is.na(testdata[,i])) == nrow(testdata)) {
+    testdata[,i] <- median(train5[,names(testdata)[i]])
+  }
+}
+
+# load the random forest model and score your isolates
+votes <- data.frame(predict(model5, na.roughfix(testdata), type="vote"))
+train_votes <- data.frame(predict(model5, train5, type="vote"))
+
+# Visualisation
+
+combined <- rbind(votes, train_votes)
+combined$Dataset <- c(rep("Testing", nrow(votes)), rep("Training", nrow(train_votes)))
+combined$Dataset_jitter <- jitter(as.numeric(as.factor(combined$Dataset)), amount=0.4)
+combined$Phenotype <- c(rep("Unknown", nrow(testdata)), as.character(train5$class))
+
+ggplot(combined, aes(x=Dataset_jitter, col=Phenotype, y=Invasive, label=row.names(combined))) + geom_point() + geom_text_repel() + coord_flip() + theme_bw() + ylim(0, 1.1) + xlab("") + ylab("Invasiveness index")
+```
+
