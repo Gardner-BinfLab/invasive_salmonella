@@ -46,7 +46,7 @@ foreach my $file (@files) {
         }
     }
 }
-# print Dumper (\%bitscores);
+# print Dumper (\%{$bitscores{bcfC}});
 close IN;
 
 open OUT, "> bitscores.tsv";
@@ -58,8 +58,9 @@ foreach my $gene (keys(%bitscores)) {
     foreach my $model (keys(%{$bitscores{$gene}})) {
         my $sum;
         map { $sum += $_ } grep {defined} @{$bitscores{$gene}{$model}};
-        if ($sum > $bestscore) {
+       if ($sum > $bestscore) {
             $bestmodel = $model;
+           $bestscore = $sum;
         }
     }
     print OUT $gene, "\t", join("\t", map { $_ // '' } @{$bitscores{$gene}{$bestmodel}}), "\n";
