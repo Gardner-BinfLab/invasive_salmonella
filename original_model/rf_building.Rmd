@@ -11,62 +11,14 @@ To replicate this analysis, you will need to get your own hmmsearch domain table
 
 Before running this notebook, run the parse_hmmsearch.pl script to get a tab-delimited file containing bitscores for all orthogroups. 
 
-```{r, read in data, echo=F, warning=F}
-
+```{r}
 library(gplots)
 library(caret)
 library(randomForest)
 set.seed(1)
 
-# Reading in the eggNOG model scores, checking to make sure that top eggNOG model hit for each protein in the orthogroup is the same
-eggNOG <- read.delim("eggNOGscores.tsv", header=F)
-check <- read.delim("checkmodels", header=F)
-inconsistent <- vector()
-for(i in 1:nrow(check)) {
-  if(length(unique(check[i,][!is.na(check[i,])]))==1) {
-    inconsistent <- c(inconsistent, FALSE)
-  } else {
-    inconsistent <- c(inconsistent, TRUE)
-  }
-}
-eggNOG <- eggNOG[!inconsistent,]
-row.names(eggNOG) <- make.names(eggNOG[,1], unique=T)
-eggNOG <- eggNOG[,-1]
-eggNOG <- t(eggNOG)
-eggNOG <- eggNOG[-c(9,11),] # remove duplicate strains
-row.names(eggNOG) <- c("Typhimurium", "Newport", "Heidelberg", "Schwarzengrund", "Agona", "Enteritidis", "ParatyphiB", "TyphiCT18", "ParatyphiA", "Dublin", "Gallinarum", "Choleraesuis", "ParatyphiC")
-
-# compute delta-bitscore for assessment of functional impacts of sequence variation
-eggNOG2 <- data.frame()
-for (i in 1:ncol(eggNOG)) {
-	eggNOG2 <- rbind(eggNOG2, median(eggNOG[,i], na.rm=T)-eggNOG[,i])
-}
-
-row.names(eggNOG2) <- colnames(eggNOG)
-colnames(eggNOG2) <- c("Typhimurium", "Newport", "Heidelberg", "Schwarzengrund", "Agona", "Enteritidis", "ParatyphiB", "TyphiCT18", "ParatyphiA", "Dublin", "Gallinarum", "Choleraesuis", "ParatyphiC")
-
-traineggNOG <- t(eggNOG2)
-traineggNOG <- traineggNOG[,-nearZeroVar(traineggNOG)]
-traineggNOG <- cbind.data.frame(traineggNOG, c(rep("Gastro", 7), rep("Invasive", 6)))
-colnames(traineggNOG)[ncol(traineggNOG)] = "class"
-
-traineggNOG2 <- data.frame(class=traineggNOG$class)
-for(i in 1:(ncol(traineggNOG)-1)) {
-  if(sum(is.na(traineggNOG[,i]))<7) {
-    traineggNOG2 <- cbind.data.frame(traineggNOG2, traineggNOG[,i])
-    colnames(traineggNOG2)[ncol(traineggNOG2)] <- colnames(traineggNOG)[i]
-  }
-}
-row.names(traineggNOG2) <- row.names(traineggNOG)
-
-```
-
-```{r}
-######## ALTERNATIVE APPROACH WITH MISSING GENES SCORED AS ZERO #############
-# use of this approach or the one above depends on the quality of your genomes - if no reads for a gene is likely to indicate that the gene has been deleted, use this approach, but if it may indicate poor coverage, use the above approach
-
-eggNOG <- read.delim("eggNOGscores.tsv", header=F)
-check <- read.delim("checkmodels", header=F)
+eggNOG <- read.delim("eggNOGscores_old_rename.tsv", header=F)
+check <- read.delim("checkmodels_old", header=F)
 inconsistent <- vector()
 for(i in 1:nrow(check)) {
   if(length(unique(check[i,][!is.na(check[i,])]))==1) {
@@ -82,9 +34,9 @@ for(i in 2:ncol(eggNOG)) {
 }
 row.names(eggNOG) <- make.names(eggNOG[,1], unique=T)
 eggNOG <- eggNOG[,-1]
+eggNOG <- eggNOG[,-c(9,11)] # remove duplicate strains
 eggNOG <- t(eggNOG)
-eggNOG <- eggNOG[-c(9,11),] # remove duplicate strains
-row.names(eggNOG) <- c("Typhimurium", "Newport", "Heidelberg", "Schwarzengrund", "Agona", "Enteritidis", "ParatyphiB", "TyphiCT18", "ParatyphiA", "Dublin", "Gallinarum", "Choleraesuis", "ParatyphiC")
+row.names(eggNOG) <- c("Typhimurium", "Newport", "Heidelberg", "Schwarzengrund", "Agona", "Enteritidis", "ParatyphiB", "Typhi", "ParatyphiA", "Dublin", "Gallinarum", "Choleraesuis", "ParatyphiC")
 
 eggNOG2 <- data.frame()
 for (i in 1:ncol(eggNOG)) {
@@ -92,7 +44,7 @@ for (i in 1:ncol(eggNOG)) {
 }
 
 row.names(eggNOG2) <- colnames(eggNOG)
-colnames(eggNOG2) <- c("Typhimurium", "Newport", "Heidelberg", "Schwarzengrund", "Agona", "Enteritidis", "ParatyphiB", "TyphiCT18", "ParatyphiA", "Dublin", "Gallinarum", "Choleraesuis", "ParatyphiC")
+colnames(eggNOG2) <- c("Typhimurium", "Newport", "Heidelberg", "Schwarzengrund", "Agona", "Enteritidis", "ParatyphiB", "Typhi", "ParatyphiA", "Dublin", "Gallinarum", "Choleraesuis", "ParatyphiC")
 
 traineggNOG <- eggNOG
 traineggNOG <- traineggNOG[,-nearZeroVar(traineggNOG)]
@@ -100,9 +52,9 @@ traineggNOG <- cbind.data.frame(traineggNOG, c(rep("Gastro", 7), rep("Invasive",
 colnames(traineggNOG)[ncol(traineggNOG)] = "class"
 
 
-save(traineggNOG, eggNOG, eggNOG2, file="model_data.Rdata")
+# save(traineggNOG, eggNOG, eggNOG2, file="model_data.Rdata")
 
-load("model_data.Rdata")  # for re-running analyses, you can skip to reading in the saved training data
+# load("model_data.Rdata")  # for re-running analyses, you can skip to reading in the saved training data
 ```
 
 
@@ -253,8 +205,6 @@ model$predicted
 
 names(model$importance[order(model$importance, decreasing=T),][1:10])
 
-save(model, train2, train3, train4, file="traindata.Rdata")
-load(file="traindata.Rdata")
 ```
 
 ```{r, quicker model building}
@@ -296,7 +246,7 @@ model5
 
 model5$predicted
 
-names(model5$importance[order(model5$importance[,1], decreasing=T),])[1:10]
+names(train5)
 
 png("final_model_VI.png", width=400, height=350)
 plot(1:param, model5$importance[order(model5$importance, decreasing=T),], xlab="", ylab="Variable importance")
