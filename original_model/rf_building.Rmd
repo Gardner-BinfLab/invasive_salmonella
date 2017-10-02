@@ -17,8 +17,8 @@ library(caret)
 library(randomForest)
 set.seed(1)
 
-eggNOG <- read.delim("eggNOGscores_old_rename.tsv", header=F)
-check <- read.delim("checkmodels_old", header=F)
+eggNOG <- read.delim("eggNOGscores.tsv", header=F)
+check <- read.delim("checkmodels", header=F)
 inconsistent <- vector()
 for(i in 1:nrow(check)) {
   if(length(unique(check[i,][!is.na(check[i,])]))==1) {
