@@ -14,7 +14,7 @@ library(ggplot2)
 library(ggrepel)
 
 # set the directory you are working from
-directory <- "~/Documents/salmonella/salmonella_invasiveness_index/"
+directory <- ""
 
 load(paste(directory, "/finalmodel.Rdata", sep=""))
 lookup <- read.delim(paste(directory, "/lookup.tsv", sep=""))
