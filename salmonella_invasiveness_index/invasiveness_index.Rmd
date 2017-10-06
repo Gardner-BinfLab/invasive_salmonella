@@ -14,7 +14,7 @@ library(ggplot2)
 library(ggrepel)
 
 # set the directory you are working from
-directory <- ""
+directory <- "~/Documents/salmonella/salmonella_invasiveness_index/"
 
 load(paste(directory, "/finalmodel.Rdata", sep=""))
 lookup <- read.delim(paste(directory, "/lookup.tsv", sep=""))
@@ -53,6 +53,9 @@ for(i in unique(bitscores$strain)) {  # for each sample
 names(testdata) <- colnames(train5)[-197]
 row.names(testdata) <- unique(bitscores$strain)
 
+# testdata[is.na(testdata)] <- 0 # use with caution, only with high-coverage genomes
+
+# if a gene is missing from all of your samples, values will be filled in based on the median observed in our training data
 for(i in 1:ncol(testdata)) {
   if(sum(is.na(testdata[,i])) == nrow(testdata)) {
     testdata[,i] <- median(train5[,names(testdata)[i]])
@@ -62,6 +65,7 @@ for(i in 1:ncol(testdata)) {
 # load the random forest model and score your isolates
 votes <- data.frame(predict(model5, na.roughfix(testdata), type="vote"))
 train_votes <- data.frame(predict(model5, train5, type="vote"))
+oob_votes <- data.frame(model5$votes)
 
 # Visualisation
 
@@ -70,6 +74,51 @@ combined$Dataset <- c(rep("Testing", nrow(votes)), rep("Training", nrow(train_vo
 combined$Dataset_jitter <- jitter(as.numeric(as.factor(combined$Dataset)), amount=0.4)
 combined$Phenotype <- c(rep("Unknown", nrow(testdata)), as.character(train5$class))
 
-ggplot(combined, aes(x=Dataset_jitter, col=Phenotype, y=Invasive, label=row.names(combined))) + geom_point() + geom_text_repel() + coord_flip() + theme_bw() + ylim(0, 1.1) + xlab("") + ylab("Invasiveness index")
+ggplot(combined, aes(x=Dataset_jitter, col=Phenotype, y=Invasive, label=row.names(combined))) + geom_point() + geom_text_repel() + coord_flip() + theme_bw() + ylim(0, 1.1) + xlab("") + ylab("Invasiveness index") + geom_hline(yintercept = 0.5)
+```
+
+
+```{r, how does each gene look for our strains of interest?}
+scores <- data.frame()
+
+for(i in 1:10000) {
+  scores <- rbind(scores, getTree(model5, i))
+}
+scores <- scores[scores$`split var`!=0,]
+cutoffs <- vector()
+for(i in 1:196) {
+  cutoffs <- c(cutoffs, median(scores$`split point`[scores$`split var`==i]))
+}
+degradation <- vector()
+for(i in colnames(train5)[-197]) {
+  degradation <- c(degradation, median(train5[1:6,i], na.rm=T)>median(train5[7:15,i], na.rm=T))
+}
+
+genedata <- data.frame()
+for(i in 1:length(names(testdata))) {
+  if(degradation[i]==T) {
+      genedata <- rbind(genedata, c(testdata[,i]<cutoffs[i], train5[,i]<cutoffs[i]))
+  } else {
+      genedata <- rbind(genedata, c(testdata[,i]>cutoffs[i], train5[,i]>cutoffs[i]))
+  }
+}
+row.names(genedata) <- sub("_gpro.*", "", names(testdata))
+colnames(genedata) <-c(paste(row.names(testdata), "_test", sep=""), paste(row.names(train5), "_train", sep=""))
+
+library(ggplot2)
+library(reshape2)
+
+genedata[genedata==TRUE] <- 1
+genedata[genedata==FALSE] <- 0
+genedata <- genedata[,order(colnames(genedata))]
+melted <- melt(cbind.data.frame(Gene=row.names(genedata), genedata))
+melted$value[melted$value==1] <- "Invasive"
+melted$value[melted$value==0] <- "Gastrointestinal"
+ggplot(melted, aes(x = Gene, y = variable, fill = value)) + geom_tile() + scale_fill_manual("Prediction", values=c("black", "white"))
+ggsave("genes.png", width=7, height=4)
+
+genedata[genedata==1] <- "Invasive"
+genedata[genedata==0] <- "Gastrointestinal"
+write.csv(genedata, file="gene_predictions.csv")
 ```
 
