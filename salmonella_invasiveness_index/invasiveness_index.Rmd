@@ -110,11 +110,10 @@ library(reshape2)
 
 genedata[genedata==TRUE] <- 1
 genedata[genedata==FALSE] <- 0
-genedata <- genedata[,order(colnames(genedata))]
 melted <- melt(cbind.data.frame(Gene=row.names(genedata), genedata))
 melted$value[melted$value==1] <- "Invasive"
 melted$value[melted$value==0] <- "Gastrointestinal"
-ggplot(melted, aes(x = Gene, y = variable, fill = value)) + geom_tile() + scale_fill_manual("Prediction", values=c("black", "white"))
+ggplot(melted, aes(x = Gene, y = variable, fill = value)) + geom_tile() + scale_fill_manual("Prediction", values=c("black", "white")) + theme(axis.text.x=element_blank(), axis.ticks.x=element_blank())
 ggsave("genes.png", width=7, height=4)
 
 genedata[genedata==1] <- "Invasive"
