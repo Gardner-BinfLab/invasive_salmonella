@@ -51,7 +51,7 @@ close IN;
 
 open OUT, "> bitscores.tsv";
 open MODELS, "> models_used.tsv";
-print OUT join("\t", @strains), "\n";
+print OUT "\t", join("\t", @strains), "\n";
 foreach my $gene (keys(%bitscores)) {
     my $bestscore = 0;
     my $bestmodel;
