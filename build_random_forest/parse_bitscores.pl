@@ -38,7 +38,7 @@ foreach my $file (@files) {
     open IN, $file;
     while (<IN>) {
         chomp;
-        next if ($_ =~ /#/);
+        next if ($_ =~ /^#/);
         my @split = split /\s+/;
         for (@split) {s/\"//g};
         if (defined($orthologs{$split[0]}) && $split[6]<0.001) {
