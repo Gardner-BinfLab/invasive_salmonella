@@ -81,8 +81,8 @@ foreach my $seq (keys(%cds)) {
         foreach my $pos (sort{ $b <=> $a }keys($snps{$cds{$seq}[0]})) { # for each snp in the array
             if ($pos >= $cds{$seq}[1] & $pos <= $cds{$seq}[2]) { # if it falls between the coordinates of the CDS
                 #            print Dumper(@{$snps{$cds{$seq}[0]}{$pos}});
-                splice @fasta, $pos-($cds{$seq}[1])-1, length($snps{$cds{$seq}[0]}{$pos}[0]) or die "$seq $pos-($cds{$seq}[1])-1 $#fasta $cds{$seq}[1]-1)..($cds{$seq}[2]-1"; # take out the old nucleotides
-                splice @fasta, $pos-($cds{$seq}[1])-1, 0, split("",$snps{$cds{$seq}[0]}{$pos}[1]); # sub in the new ones
+                splice @fasta, $pos-($cds{$seq}[1]), length($snps{$cds{$seq}[0]}{$pos}[0]) or die "$seq $pos-($cds{$seq}[1])-1 $#fasta $cds{$seq}[1]-1)..($cds{$seq}[2]-1"; # take out the old nucleotides
+                splice @fasta, $pos-($cds{$seq}[1]), 0, split("",$snps{$cds{$seq}[0]}{$pos}[1]); # sub in the new ones
                 print LOG $seq, "\t", $pos, "\t", $snps{$cds{$seq}[0]}{$pos}[1], "\n";
             }
         }
