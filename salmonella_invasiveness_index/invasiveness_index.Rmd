@@ -28,7 +28,7 @@ for(file in files) {
   bitscores <- rbind(bitscores, cbind.data.frame(strain=rep(strain, nrow(read)), read))
 }
 
-# go through each row of the ortholog list and collect bitscores for each gene - FIX THIS - need to be comparing the right gene to the right model
+# go through each row of the ortholog list and collect bitscores for each gene
 orthlist <- read.delim(paste(directory, "/orthlist.tsv", sep=""), header=T, stringsAsFactors=F)
 
 testdata <- data.frame()
