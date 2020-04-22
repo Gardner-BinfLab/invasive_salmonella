@@ -26,7 +26,7 @@ testdata <- rbind(testdata, scores)
 names(testdata) <- colnames(train5)[-197]
 row.names(testdata) <- unique(bitscores$strain)
 
-train5["Typhimurium",grep("\\.S", colnames(train5))] <- NA
+# impute scores for genes not covered by enough reads
 merge <- rbind(testdata, train5[,-197])
 merge2 <- knnImputation(merge, k=1)
 
