@@ -32,6 +32,5 @@ hmmsearch --domtblout hmmsearch models.hmm sample.faa.trim > tmp.txt
 
 R CMD BATCH --no-save invasiveness_index.R
 cat votes.csv >> votelog
-cat missingscores.csv >> missingscores
 
-rm bowtieout.sam samtoolsout.bam samtoolsout.sort.bam* samtoolsout.mpileup NsinAssembly bcftools.bcf bcftools.vcf sample_edited.fna coverage missinggenes missinglines
+rm reads sample.faa hmmsearch hmmsearch.parse sample.faa.trim strain tmp.txt votes.csv bowtieout.sam samtoolsout.bam samtoolsout.sort.bam* samtoolsout.mpileup NsinAssembly bcftools.bcf bcftools.vcf sample_edited.fna coverage missinggenes missinglines
