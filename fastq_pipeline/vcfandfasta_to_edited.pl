@@ -1,5 +1,6 @@
 #!/usr/bin/perl
 
+use experimental 'smartmatch';
 use strict;
 use warnings;
 use Data::Dumper;
