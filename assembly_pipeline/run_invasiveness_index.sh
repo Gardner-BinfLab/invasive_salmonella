@@ -6,7 +6,7 @@ echo $sample > strain
 # convert the assemblies to simulated reads
 fastaq to_perfect_reads $sample reads 150 1 5 100
 # map the simulated reads to the genes of interest in the ML model
-bowtie2 --sensitive-local -x topgenes --interleaved reads > bowtieout.sam
+bowtie2 --sensitive-local -x topgenes -q reads > bowtieout.sam
 samtools view -b -S bowtieout.sam -t topgenes_nt.fasta.fai > samtoolsout.bam
 samtools sort samtoolsout.bam -o samtoolsout.sort.bam
 samtools index samtoolsout.sort.bam
